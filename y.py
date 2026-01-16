@@ -12,7 +12,7 @@ from aiogram.types import (
 
 
 TOKEN = os.environ["BOT_TOKEN"]  # ضع التوكن في Secrets على Replit
-OWNER_ID = int(os.environ.get("OWNER_ID", 8380675536))  # معرفك الشخصي
+OWNER_ID = int(os.environ.get("OWNER_ID", 5620426600))  # معرفك الشخصي
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -273,4 +273,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
