@@ -202,7 +202,7 @@ async def handle_message(message: Message):
             f"لقد اخترت الدفع بـ {payment}.\n"
             f"الطلب: {form_name} بسعر {price}\n"
             f"رقم الحساب: {payment_number}\n"
-            "يرجى تحويل المبلغ على الرقم أعلاه ثم إرسال صورة شاشة لعملية التحويل:",
+            "يرجى تحويل المبلغ على الرقم أعلاه ثم إرسال صورة لرسالة التحويل أو صورة لسجل التحويلات",
             reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BACK_BUTTON_TEXT)]], resize_keyboard=True)
         )
         return
@@ -273,5 +273,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
