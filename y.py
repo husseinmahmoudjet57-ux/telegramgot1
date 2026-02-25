@@ -1,5 +1,6 @@
 import asyncio
 import os
+import json
 from threading import Thread
 from flask import Flask
 from aiogram import Bot, Dispatcher, F
@@ -10,19 +11,25 @@ from aiogram.types import (
 )
 
 TOKEN = os.environ["BOT_TOKEN"]
-OWNER_ID = int(os.environ.get("OWNER_ID", 5620426600))
+OWNER_ID = int(os.environ.get("OWNER_ID", 8380675536))
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ================= ORIGINAL FORMS (لم ألمسها)
-forms = {
-    "نموذج 1": "1000 ل.س",
-    "نموذج 2": "1500 ل.س",
-    "نموذج 3": "2000 ل.س"
-}
+# ===== تحميل النماذج من JSON
+def load_forms():
+    try:
+        with open("forms.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
 
-# ================= NEW SECTIONS (تمت الإضافة فقط)
+def save_forms():
+    with open("forms.json", "w", encoding="utf-8") as f:
+        json.dump(forms, f, ensure_ascii=False, indent=4)
+
+forms = load_forms()
+
 SECTIONS = {
     "الجزء الاول": ["النهايات","الاشتقاق","المتتاليات","نهاية المتتالية","التابع اللوغاريتمي","التابع الأسي","التكامل"],
     "الجزء الثاني": ["أشعة 1","أشعة 2","أشعة 3","الاعداد العقدية","تطبيقات العقدية","التحليل التوافقي","الاحتمالات"],
@@ -45,9 +52,10 @@ active_sessions = {}
 payment_approval = {}
 can_send_photo = {}
 
-# ====== NEW STATE (تمت الإضافة)
 user_section = {}
 user_unit = {}
+
+adding_session = {}
 
 # ================= KEYBOARDS
 
@@ -63,9 +71,14 @@ def units_menu(section):
         resize_keyboard=True
     )
 
-def get_forms_keyboard():
+def forms_menu(section, unit=None):
+    if unit:
+        data = forms[section][unit]
+    else:
+        data = forms[section]
+
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=f)] for f in forms] + [[KeyboardButton(text=BACK_BUTTON_TEXT)]],
+        keyboard=[[KeyboardButton(text=f)] for f in data.keys()] + [[KeyboardButton(text=BACK_BUTTON_TEXT)]],
         resize_keyboard=True
     )
 
@@ -80,7 +93,7 @@ def get_payment_keyboard():
     )
 
 def create_order_keyboard(user_id):
-    return InlineKeyboardMarkup(inline_keyboard=[[
+    return InlineKeyboardMarkup(inline_keyboard=[[ 
         InlineKeyboardButton(text="أرسل الملف", callback_data=f"order_{user_id}"),
         InlineKeyboardButton(text="إزالة", callback_data=f"delete_{user_id}")
     ]])
@@ -93,7 +106,16 @@ async def start(message: Message):
         return
     await message.answer("اختر القسم:", reply_markup=main_menu())
 
-# ================= SEND ORDER OWNER (لم ألمس)
+# ================= ADD FORM
+
+@dp.message(Command("addform"))
+async def add_form_start(message: Message):
+    if message.from_user.id != OWNER_ID:
+        return
+    adding_session[OWNER_ID] = {"step": "choose_section"}
+    await message.answer("اختر القسم:", reply_markup=main_menu())
+
+# ================= SEND ORDER OWNER
 
 async def send_order_to_owner(user_id):
     order = pending_orders[user_id]
@@ -112,48 +134,94 @@ async def handle(message: Message):
     uid = message.from_user.id
     text = message.text
 
-    # ===== BACK SMART (تم التعديل)
+    # ===== نظام إضافة نموذج =====
+    if uid == OWNER_ID and uid in adding_session:
+        session = adding_session[uid]
+
+        if session["step"] == "choose_section":
+            session["section"] = text
+
+            if text in ["نماذج مختلطة (دمج وحدات)", "شوامل"]:
+                session["step"] = "enter_name"
+                await message.answer("اكتب اسم النموذج:")
+                return
+
+            session["step"] = "choose_unit"
+            await message.answer("اختر الوحدة:", reply_markup=units_menu(text))
+            return
+
+        if session["step"] == "choose_unit":
+            session["unit"] = text
+            session["step"] = "enter_name"
+            await message.answer("اكتب اسم النموذج:")
+            return
+
+        if session["step"] == "enter_name":
+            session["name"] = text
+            session["step"] = "enter_price"
+            await message.answer("اكتب السعر رقم فقط:")
+            return
+
+        if session["step"] == "enter_price":
+            if not text.isdigit():
+                await message.answer("اكتب رقم فقط.")
+                return
+
+            price = f"{text} ل.س"
+            section = session["section"]
+
+            if section in ["نماذج مختلطة (دمج وحدات)", "شوامل"]:
+                forms[section][session["name"]] = price
+            else:
+                unit = session["unit"]
+                forms[section][unit][session["name"]] = price
+
+            save_forms()
+            adding_session.pop(uid)
+            await message.answer("تمت إضافة النموذج ✅")
+            return
+
+    # ===== بقية كودك كما هو =====
+
     if text == BACK_BUTTON_TEXT:
         can_send_photo[uid] = False
-
-        if uid in user_selected_form:
-            user_selected_form.pop(uid)
-            await message.answer("اختر الوحدة:", reply_markup=units_menu(user_section[uid]))
-            return
-
-        if uid in user_unit:
-            user_unit.pop(uid)
-            await message.answer("اختر القسم:", reply_markup=main_menu())
-            return
-
         await message.answer("اختر القسم:", reply_markup=main_menu())
         return
 
-    # ===== SECTION
     if text in SECTIONS:
         user_section[uid] = text
         if SECTIONS[text]:
             await message.answer("اختر الوحدة:", reply_markup=units_menu(text))
         else:
-            await message.answer("اختر النموذج:", reply_markup=get_forms_keyboard())
+            await message.answer("اختر النموذج:", reply_markup=forms_menu(text))
         return
 
-    # ===== UNIT
     if uid in user_section and text in SECTIONS[user_section[uid]]:
         user_unit[uid] = text
-        await message.answer("اختر النموذج:", reply_markup=get_forms_keyboard())
+        await message.answer("اختر النموذج:", reply_markup=forms_menu(user_section[uid], text))
         return
 
-    # ===== FORM (لم ألمس النص)
-    if text in forms:
-        user_selected_form[uid] = text
-        await message.answer(
-            f"لقد اخترت {text} بسعر: {forms[text]}\nاختر طريقة الدفع:",
-            reply_markup=get_payment_keyboard()
-        )
-        return
+    # اختيار نموذج
+    if uid in user_section:
+        section = user_section[uid]
+        unit = user_unit.get(uid)
 
-    # ===== PAYMENT (كما هو)
+        if unit and text in forms[section][unit]:
+            user_selected_form[uid] = text
+            price = forms[section][unit][text]
+        elif text in forms[section]:
+            user_selected_form[uid] = text
+            price = forms[section][text]
+        else:
+            price = None
+
+        if price:
+            await message.answer(
+                f"لقد اخترت {text} بسعر: {price}\nاختر طريقة الدفع:",
+                reply_markup=get_payment_keyboard()
+            )
+            return
+
     if text in ["شام كاش","سيرياتيل كاش"]:
         user_selected_payment[uid]=text
         can_send_photo[uid]=False
@@ -168,17 +236,15 @@ async def handle(message: Message):
             resize_keyboard=True))
         return
 
-    # ===== ACCEPT
     if text==ACCEPT_BUTTON_TEXT:
         can_send_photo[uid]=True
         f=user_selected_form[uid]
         p=user_selected_payment[uid]
         await message.answer(
-            f"لقد اخترت الدفع بـ {p}.\nالطلب: {f} بسعر {forms[f]}\nرقم الحساب: {PAYMENT_NUMBERS[p]}\nيرجى تحويل المبلغ على الرقم أعلاه ثم إرسال صورة لرسالة التحويل أو صورة لسجل التحويلات",
+            f"لقد اخترت الدفع بـ {p}.\nالطلب: {f}\nرقم الحساب: {PAYMENT_NUMBERS[p]}\nيرجى تحويل المبلغ على الرقم أعلاه ثم إرسال صورة لرسالة التحويل أو صورة لسجل التحويلات",
             reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=BACK_BUTTON_TEXT)]],resize_keyboard=True))
         return
 
-    # ===== PHOTO
     if message.photo:
         if not can_send_photo.get(uid):
             await message.answer("يرجى اختيار طريقة الدفع أولاً قبل إرسال صورة التحويل.")
@@ -195,7 +261,7 @@ async def handle(message: Message):
         await message.answer("تم استلام صورة التحويل ✅ سيتم مراجعة الطلب والرد في أقرب وقت ممكن.")
         return
 
-# ================= OWNER BUTTONS (لم ألمس)
+# ================= OWNER BUTTONS
 
 @dp.callback_query(F.data.startswith(("order_","delete_")))
 async def owner_cb(q:CallbackQuery):
