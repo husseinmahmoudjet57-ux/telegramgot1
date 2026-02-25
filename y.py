@@ -103,7 +103,9 @@ def create_order_keyboard(user_id):
 @dp.message(CommandStart())
 async def start(message: Message):
     if message.from_user.id == OWNER_ID:
+        await message.answer("لوحة المالك جاهزة.\nاستخدم /addform لإضافة نموذج جديد.")
         return
+
     await message.answer("اختر القسم:", reply_markup=main_menu())
 
 # ================= ADD FORM
@@ -297,3 +299,4 @@ async def main():
 
 if __name__=="__main__":
     asyncio.run(main())
+
